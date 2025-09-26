@@ -47,7 +47,6 @@ async def upload_document(file: UploadFile = File(...)):
         # 4. Ensure coordinates
         coords = str(data.get("Coordinates") or "").strip()
         if not coords:  
-            # Try generating from address if missing
             address_parts = [
                 data.get("Village Name", ""),
                 data.get("Block", ""),
@@ -98,6 +97,23 @@ async def upload_document(file: UploadFile = File(...)):
                 conn.commit()
 
         return {"status": "success", "doc_id": doc_id, "data": data}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ✅ New route: Fetch all FRA documents
+@router.get("/all")
+async def get_all_documents():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM fra_documents ORDER BY created_at DESC;")
+                rows = cur.fetchall()
+                colnames = [desc[0] for desc in cur.description]
+
+        results = [dict(zip(colnames, row)) for row in rows]
+        return {"status": "success", "count": len(results), "results": results}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
