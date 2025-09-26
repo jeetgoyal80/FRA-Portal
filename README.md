@@ -38,3 +38,35 @@ GEMINI_API_KEY=your_api_key_here
 uvicorn main:app --reload
 ```
 
+## Frontend
+
+The frontend is built using **React + Vite**.
+
+### Setup
+
+1. Navigate to the frontend folder:
+
+```bash
+   cd Frontend
+```
+
+2. Install dependencies:
+
+```bash
+npm install
+```
+
+3. Run the development server:
+
+```bash
+npm run dev
+```
+The app should now be running on http://localhost:5173
+
+
+### Build for production
+
+```bash
+npm run build
+```
+This will generate optimized static files inside the dist folder.
