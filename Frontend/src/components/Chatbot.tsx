@@ -56,20 +56,6 @@ const Chatbot = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleQuickAction = (action: string) => {
-    const actionText = quickActions.find(qa => qa.action === action)?.text || action;
-    handleSendMessage(actionText, action);
-  };
-
-  // Helper: try to parse JSON safely
-  const tryParseJSON = (text: string) => {
-    try {
-      return JSON.parse(text);
-    } catch {
-      return null;
-    }
-  };
-
   const handleSendMessage = async (text?: string, action?: string) => {
     const messageText = text || inputValue.trim();
     if (!messageText) return;
@@ -86,7 +72,6 @@ const Chatbot = () => {
     setIsTyping(true);
 
     try {
-      // API call with query param
       const response = await fetch(
         `${BACKEND_URL}/dss/check?q=${encodeURIComponent(messageText)}`,
         { method: "GET" }
@@ -100,7 +85,7 @@ const Chatbot = () => {
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.includes("application/json")) {
         const json = await response.json();
-        data = JSON.stringify(json); // keep as string, will render later
+        data = JSON.stringify(json);
       } else {
         data = await response.text();
       }
@@ -134,9 +119,17 @@ const Chatbot = () => {
     }
   };
 
+  const tryParseJSON = (text: string) => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  };
+
   if (!isOpen) {
     return (
-      <div className="fixed bottom-4 right-4 z-50 mb-2">
+      <div className="fixed bottom-4 right-4 z-[9999] mb-2">
         <Button
           onClick={() => setIsOpen(true)}
           size="lg"
@@ -150,10 +143,9 @@ const Chatbot = () => {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50">
-      <Card className={`w-96 shadow-elevated transition-all duration-300 ${
-        isMinimized ? 'h-16' : 'h-[500px]'
-      }`}>
+    <div className="fixed bottom-4 right-4 z-[9999]">
+      <Card className={`w-96 shadow-elevated transition-all duration-300 ${isMinimized ? 'h-16' : 'h-[500px]'
+        }`}>
         {/* Header */}
         <CardHeader className="pb-3 border-b">
           <div className="flex items-center justify-between">
@@ -195,55 +187,66 @@ const Chatbot = () => {
             <CardContent className="h-80 overflow-y-auto p-4 space-y-4">
               {messages.map((message) => {
                 const parsed = tryParseJSON(message.text);
-
                 return (
                   <div
                     key={message.id}
                     className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`flex items-start space-x-2 max-w-[80%] ${
-                        message.sender === 'user' ? 'flex-row-reverse space-x-reverse' : ''
-                      }`}
+                      className={`flex items-start space-x-2 max-w-[80%] ${message.sender === 'user' ? 'flex-row-reverse space-x-reverse' : ''
+                        }`}
                     >
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                        message.sender === 'user'
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center ${message.sender === 'user'
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted text-muted-foreground'
-                      }`}>
-                        {message.sender === 'user' ? (
-                          <User className="h-3 w-3" />
-                        ) : (
-                          <Bot className="h-3 w-3" />
-                        )}
+                        }`}>
+                        {message.sender === 'user' ? <User className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
                       </div>
                       <div
-                        className={`rounded-lg px-3 py-2 text-sm ${
-                          message.sender === 'user'
+                        className={`rounded-lg px-3 py-2 text-sm ${message.sender === 'user'
                             ? 'bg-primary text-primary-foreground'
                             : 'bg-muted text-muted-foreground'
-                        }`}
+                          }`}
                       >
-                        {/* 👇 Custom rendering for JSON */}
                         {parsed && parsed.results ? (
-                          <div className="space-y-3">
+                          <div className="space-y-2">
                             <p className="font-semibold text-accent">
                               📑 Scheme: {parsed.scheme || "N/A"} ({parsed.count} records)
                             </p>
-                            {parsed.results.map((item: any, idx: number) => (
-                              <div key={idx} className="border rounded-lg p-2 bg-white text-black">
-                                <p><b>👤 Name:</b> {item.patta_holder_name}</p>
-                                <p><b>👪 Father/Husband:</b> {item.father_or_husband_name}</p>
-                                <p><b>🎂 Age:</b> {item.age} | <b>Gender:</b> {item.gender}</p>
-                                <p><b>🏡 Village:</b> {item.village_name}, {item.block}, {item.district}</p>
-                                <p><b>🌍 Land Use:</b> {item.land_use}</p>
-                                <p><b>📏 Area:</b> {item.total_area_claimed}</p>
-                                {item.water_bodies && <p><b>💧 Water Bodies:</b> {item.water_bodies}</p>}
-                                {item.forest_cover && <p><b>🌳 Forest Cover:</b> {item.forest_cover}</p>}
-                                {item.homestead && <p><b>🏠 Homestead:</b> {item.homestead}</p>}
-                                <p className="text-xs opacity-60">🆔 Claim ID: {item.claim_id}</p>
-                              </div>
-                            ))}
+
+                            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                              {parsed.results.map((person: any, idx: number) => (
+                                <div
+                                  key={idx}
+                                  className="border rounded-md p-2 bg-background text-xs shadow-sm"
+                                >
+                                  <p className="font-semibold">
+                                    👤 {person.patta_holder_name || "Unknown"} ({person.gender}, {person.age} yrs)
+                                  </p>
+                                  <p>👨‍👩 Father/Husband: {person.father_or_husband_name}</p>
+                                  <p>🏡 Address: {person.address}</p>
+                                  <p>
+                                    📍 {person.village_name}, {person.block}, {person.district}, {person.state}
+                                  </p>
+                                  <p>🌱 Land Use: {person.land_use} ({person.total_area_claimed})</p>
+                                  <p>📌 Coordinates: {person.coordinates}</p>
+                                  <p>🆔 Claim ID: {person.claim_id} | Survey: {person.survey_number}</p>
+                                  <p>🌳 Forest Cover: {person.forest_cover} | 💧 Water: {person.water_bodies}</p>
+                                  <p>🏠 Homestead: {person.homestead}</p>
+                                  <p>👨‍👩‍👧 Family Size: {person.family_size}</p>
+                                  <p>📞 {person.phone} | Aadhaar: {person.aadhaar}</p>
+                                  <p>🗓️ Applied: {person.date_of_application} | Verified: {person.verification_date}</p>
+                                  <p>📄 Status: {person.status} ({person.type})</p>
+
+                                  {person.schemes?.length > 0 && (
+                                    <p>✅ Schemes: {person.schemes.join(", ")}</p>
+                                  )}
+                                  {person.documents?.length > 0 && (
+                                    <p>📂 Documents: {person.documents.join(", ")}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         ) : (
                           <p className="whitespace-pre-wrap">{message.text}</p>
@@ -270,8 +273,8 @@ const Chatbot = () => {
                     <div className="bg-muted rounded-lg px-3 py-2">
                       <div className="flex space-x-1">
                         <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" />
-                        <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
-                        <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                        <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce delay-100" />
+                        <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce delay-200" />
                       </div>
                     </div>
                   </div>
@@ -281,42 +284,22 @@ const Chatbot = () => {
               <div ref={messagesEndRef} />
             </CardContent>
 
-            {/* Quick Actions */}
-            {messages.length === 1 && (
-              <div className="px-4 pb-2">
-                <p className="text-xs text-muted-foreground ">Quick Actions:</p>
-                <div className="grid grid-cols-2 gap-1">
-                  {quickActions.map((action, index) => (
-                    <Button
-                      key={index}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleQuickAction(action.action)}
-                      className="justify-start text-xs h-8"
-                    >
-                      <action.icon className="h-3 w-3 mr-1" />
-                      {action.text}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Input */}
-            <div className="border-t p-4">
-              <div className="flex space-x-2">
+            <div className="border-t p-3">
+              <div className="flex items-center space-x-2">
                 <Input
                   ref={inputRef}
                   placeholder="Ask about FRA processes, claims, or schemes..."
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyPress={handleInputKeyPress}
-                  className="flex-1"
+                  className="flex-1 h-10"
                 />
                 <Button
                   onClick={() => handleSendMessage()}
                   disabled={!inputValue.trim() || isTyping}
                   size="sm"
+                  className="h-10 w-10 flex items-center justify-center"
                 >
                   <Send className="h-4 w-4" />
                 </Button>

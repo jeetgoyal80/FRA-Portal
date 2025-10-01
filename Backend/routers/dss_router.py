@@ -24,13 +24,12 @@ def list_schemes():
 
 @router.get("/check")
 def dss_check(q: str = Query(..., description="Natural language query")):
-    try:
-        parsed = parse_dss_query(q) or {}
-    except Exception as e:
-        return {"status": "error", "message": f"Could not parse query: {str(e)}"}
+    parsed = parse_dss_query(q)
 
     scheme_name = parsed.get("scheme")
     village = parsed.get("village")
+    district = parsed.get("district")
+    state = parsed.get("state")
 
     if not scheme_name:
         return {"status": "error", "message": "Could not extract scheme name from query"}
@@ -40,31 +39,16 @@ def dss_check(q: str = Query(..., description="Natural language query")):
         return {"status": "error", "message": f"Scheme '{scheme_name}' not found"}
 
     try:
-        results = find_eligible_people_by_scheme(scheme, village)
+        results = find_eligible_people_by_scheme(
+            scheme, village=village, district=district, state=state
+        )
     except Exception as e:
         return {"status": "error", "message": f"Database error: {str(e)}"}
 
-    # Handle village not found (if no match but village was given)
-    if village and len(results) == 0:
-        # Try again with all villages
-        results = find_eligible_people_by_scheme(scheme, None)
-        message = f"No results found for village '{village}', showing results for all villages"
-    else:
-        message = "Success"
-
-    # log for audit
-    sample = results[:5]
-    try:
-        write_dss_log(q, parsed, scheme["id"], len(results), sample)
-    except Exception as e:
-        # Don’t block API if logging fails
-        print(f"Log error: {e}")
-
     return {
         "status": "ok",
-        "message": message,
         "scheme": scheme_name,
-        "village": village,
+        "filters": parsed,
         "count": len(results),
-        "results": sample,
+        "results": results[:5]  # sample
     }

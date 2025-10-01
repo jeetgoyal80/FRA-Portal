@@ -32,3 +32,9 @@ fastapi-jwt-auth            # Simple JWT integration (optional)
 
 # --- Vector Search (optional for semantic DSS queries) ---
 pgvector                   # Only if you want embeddings/semantic search later
+
+# --- Earth Engine & AI ---
+earthengine-api            # Google Earth Engine (for ee)
+tensorflow                 # Deep learning models
+numpy                      # Numerical ops
+shapely                    # Geometry operations

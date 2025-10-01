@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { useNavigate } from "react-router-dom";
 import { 
   BarChart3, 
   TrendingUp, 
@@ -99,7 +100,7 @@ const Dashboard = () => {
         return <Badge variant="secondary">{status}</Badge>;
     }
   };
-
+  const navigate = useNavigate();
   return (
     <div className="fra-container py-8">
       {/* Header */}
@@ -233,7 +234,7 @@ const Dashboard = () => {
                 <div className="flex items-center space-x-3">
                   <MapPin className="h-8 w-8 text-primary" />
                   <div className="text-left">
-                    <div className="font-medium">View Atlas</div>
+                    <div className="font-medium" onClick={()=> navigate('/atlas')}>View Atlas</div>
                     <div className="text-sm text-muted-foreground">Interactive map</div>
                   </div>
                 </div>
@@ -242,7 +243,7 @@ const Dashboard = () => {
                 <div className="flex items-center space-x-3">
                   <FileText className="h-8 w-8 text-accent" />
                   <div className="text-left">
-                    <div className="font-medium">Upload Documents</div>
+                    <div className="font-medium" onClick={()=> navigate('/upload')}>Upload Documents</div>
                     <div className="text-sm text-muted-foreground">Process claims</div>
                   </div>
                 </div>

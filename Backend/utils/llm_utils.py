@@ -223,52 +223,58 @@ You are an assistant that extracts structured filters from a natural language qu
 about government scheme eligibility.
 
 Rules:
-1. Identify the scheme name (if mentioned).
-2. Identify the village name (if mentioned).
-3. Output valid JSON only.
+1. Extract scheme, village, district, state (if available).
+2. If any field is missing, return null.
+3. Output ONLY valid JSON. No explanation, no markdown.
 
 Example:
 Question: Who is eligible for Farm Support Scheme in Bhimganga?
 Answer:
 {
   "scheme": "Farm Support Scheme",
-  "village": "Bhimganga"
+  "village": "Bhimganga",
+  "district": null,
+  "state": null
 }
 
 Question: List all people in Mandla eligible for Old Age Pension.
 Answer:
 {
   "scheme": "Old Age Pension",
-  "village": "Mandla"
+  "village": "Mandla",
+  "district": null,
+  "state": null
 }
 """
+
 
 dss_prompt = PromptTemplate.from_template(DSS_PROMPT)
 dss_chain: Runnable = dss_prompt | llm | StrOutputParser()
 
 def parse_dss_query(user_query: str) -> Dict[str, Any]:
-    """
-    Try to extract scheme name and village from user query.
-    First use LLM (if available), then fallback to regex/db matching.
-    """
-    result = {"scheme": None, "village": None}
+    result = {"scheme": None, "village": None, "district": None, "state": None}
 
-    # ---- STEP 1: Try LLM if you already wired it ----
-    # (skip here if not ready, else call dss_chain.invoke(user_query))
-    # llm_out = dss_chain.invoke(user_query)
-    # parse that into scheme/village
+    try:
+        llm_out = dss_chain.invoke(user_query)
+        parsed = json.loads(llm_out)
 
-    # ---- STEP 2: Fallback regex for village ----
-    m = re.search(r"in ([A-Za-z]+)", user_query)
-    if m:
-        result["village"] = m.group(1)
+        for key in result.keys():
+            if key in parsed:
+                result[key] = parsed[key]
 
-    # ---- STEP 3: Match against DB scheme names ----
-    schemes = fetch_schemes()
-    for s in schemes:
-        if s["name"].lower() in user_query.lower():
-            result["scheme"] = s["name"]
-            break
+    except Exception as e:
+        print("⚠️ LLM parse failed, fallback:", e)
+
+        # Regex fallback for village
+        m = re.search(r"in ([A-Za-z]+)", user_query)
+        if m:
+            result["village"] = m.group(1)
+
+        # Match scheme from DB
+        schemes = fetch_schemes()
+        for s in schemes:
+            if s["name"].lower() in user_query.lower():
+                result["scheme"] = s["name"]
+                break
 
     return result
-

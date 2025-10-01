@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -14,14 +14,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import {
-  Layers,
-  Search,
-  Info,
-  Eye,
-  EyeOff,
-  MapPin,
-} from "lucide-react";
+import { Info } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -36,11 +29,10 @@ L.Icon.Default.mergeOptions({
     "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
 });
 
-// FRA Claim type
 interface Claim {
   id: number;
   patta_holder_name: string;
-  father_or_husband_name: string;
+  father_or_husband_name?: string;
   village_name: string;
   district: string;
   state: string;
@@ -48,29 +40,31 @@ interface Claim {
   coordinates: string;
   claim_id: string;
   status: string;
-  land_use: string;
-  cultivation: string;
-  phone: string;
+  land_use?: string;
+  cultivation?: string;
+  phone?: string;
+  [key: string]: any;
 }
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL
 
-// 🔹 Utility: Create a square polygon around coordinates based on area
+const BACKEND_URL =
+  import.meta.env.VITE_BACKEND_URL || "http://localhost:8000/search";
+
+// Utility: area to square polygon
 const areaToSquareBounds = (lat: number, lng: number, areaStr: string) => {
   try {
     let area = parseFloat(areaStr);
     if (isNaN(area)) return [];
 
-    // Convert to m²
-    if (areaStr.toLowerCase().includes("hectare")) {
-      area = area * 10000; // 1 ha = 10,000 m²
-    } else if (areaStr.toLowerCase().includes("acre")) {
-      area = area * 4046.86; // 1 acre = 4046.86 m²
+    if ((areaStr || "").toLowerCase().includes("hectare")) {
+      area = area * 10000;
+    } else if ((areaStr || "").toLowerCase().includes("acre")) {
+      area = area * 4046.86;
     } else {
       return [];
     }
 
-    const side = Math.sqrt(area); // meters
-    const offsetLat = (side / 111320) / 2; // 1° lat ~ 111,320 m
+    const side = Math.sqrt(area);
+    const offsetLat = (side / 111320) / 2;
     const offsetLng =
       (side / (40075000 * Math.cos((lat * Math.PI) / 180) / 360)) / 2;
 
@@ -86,7 +80,6 @@ const areaToSquareBounds = (lat: number, lng: number, areaStr: string) => {
 };
 
 const Atlas = () => {
-  // Layer visibility
   const [layers, setLayers] = useState({
     ifr: true,
     cfr: true,
@@ -97,29 +90,51 @@ const Atlas = () => {
   });
 
   const [claims, setClaims] = useState<Claim[]>([]);
+  const [filteredClaims, setFilteredClaims] = useState<Claim[]>([]);
   const [selectedFeature, setSelectedFeature] = useState<any>(null);
 
-  // Fetch data from API
+  // Search states
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [stateFilter, setStateFilter] = useState("");
+  const [searchResults, setSearchResults] = useState<Claim[]>([]);
+  const [loadingSearch, setLoadingSearch] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const debounceRef = useRef<number | null>(null);
+
   useEffect(() => {
-    fetch(`${BACKEND_URL}/upload/all`)
-      .then((res) => res.json())
-      .then((data) => {
-        setClaims(data.results || []);
-      })
-      .catch((err) => console.error("Error fetching FRA data:", err));
+    const loadAll = async () => {
+      try {
+        const res = await fetch(
+          `${BACKEND_URL.replace(/\/search$/, "")}/upload/all`
+        );
+        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+        const data = await res.json();
+
+        const results = Array.isArray(data) ? data : (data.results || []);
+        setClaims(results);
+        setFilteredClaims(results);
+      } catch (err) {
+        console.error("Error fetching FRA data:", err);
+        setClaims([]);
+        setFilteredClaims([]);
+      }
+    };
+    loadAll();
   }, []);
 
   const toggleLayer = (layerId: string) => {
     setLayers((prev) => ({ ...prev, [layerId]: !prev[layerId] }));
   };
 
-  // Custom marker icons
   const createCustomIcon = (status: string) => {
-    let color = "#6b7280"; // default gray
-    if (status.toLowerCase() === "verified") color = "#16a34a"; // green
-    else if (status.toLowerCase() === "pending") color = "#eab308"; // yellow
-    else if (status.toLowerCase() === "approved") color = "#2563eb"; // blue
-    else if (status.toLowerCase() === "rejected") color = "#dc2626"; // red
+    const safeStatus = (status || "").toLowerCase();
+    let color = "#6b7280";
+    if (safeStatus === "verified") color = "#16a34a";
+    else if (safeStatus === "pending") color = "#eab308";
+    else if (safeStatus === "approved") color = "#2563eb";
+    else if (safeStatus === "rejected") color = "#dc2626";
 
     return L.divIcon({
       html: `<div style="background-color: ${color}; width: 18px; height: 18px; border-radius: 50%; border: 2px solid white;"></div>`,
@@ -129,7 +144,8 @@ const Atlas = () => {
   };
 
   const getStatusBadge = (status: string) => {
-    switch (status.toLowerCase()) {
+    const safeStatus = (status || "").toLowerCase();
+    switch (safeStatus) {
       case "verified":
         return <Badge className="bg-green-600 text-white">Verified</Badge>;
       case "pending":
@@ -139,96 +155,225 @@ const Atlas = () => {
       case "rejected":
         return <Badge className="bg-red-600 text-white">Rejected</Badge>;
       default:
-        return <Badge variant="secondary">{status}</Badge>;
+        return <Badge variant="secondary">{status || "Unknown"}</Badge>;
     }
+  };
+
+  const buildSearchUrl = (q?: string, status?: string, state?: string) => {
+    const base = BACKEND_URL.endsWith("/search")
+      ? BACKEND_URL
+      : `${BACKEND_URL}/search`;
+    const params = new URLSearchParams();
+    if (q) params.append("q", q);
+    if (status) params.append("status", status);
+    if (state) params.append("state", state);
+    return `${base}?${params.toString()}`;
+  };
+
+  const doSearch = async (q: string, status?: string, state?: string) => {
+    if (!q && !status && !state) {
+      setSearchResults([]);
+      setFilteredClaims(claims);
+      setShowDropdown(false);
+      return;
+    }
+    setLoadingSearch(true);
+    setShowDropdown(true);
+    try {
+      const url = buildSearchUrl(q || undefined, status || undefined, state || undefined);
+      const res = await fetch(url);
+      const data = await res.json();
+      const results = Array.isArray(data) ? data : (data.results || []);
+      setSearchResults(results);
+      if (results.length === 0) setFilteredClaims(claims);
+    } catch (err) {
+      console.error("Search error:", err);
+      setSearchResults([]);
+      setFilteredClaims(claims);
+    } finally {
+      setLoadingSearch(false);
+    }
+  };
+
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => {
+      doSearch(value.trim(), statusFilter.trim(), stateFilter.trim());
+    }, 350);
+  };
+
+  const handleViewOnMap = (result: Claim) => {
+    setFilteredClaims([result]);
+    setSelectedFeature(result);
+    setSearchResults([]);
+    setShowDropdown(false);
+    setQuery("");
+  };
+
+  const handleViewAllOnMap = () => {
+    if (!searchResults.length) return;
+    setFilteredClaims(searchResults);
+    setSelectedFeature(null);
+    setShowDropdown(false);
+    setQuery("");
+  };
+
+  const handleResetMap = () => {
+    setQuery("");
+    setStatusFilter("");
+    setStateFilter("");
+    setSearchResults([]);
+    setFilteredClaims(claims);
+    setShowDropdown(false);
   };
 
   return (
     <div className="h-screen flex">
       {/* Sidebar */}
-      <div className="w-80 bg-background border-r overflow-y-auto">
-        <div className="p-4">
-          <h1 className="text-2xl font-bold mb-2">FRA Atlas</h1>
-          <p className="text-sm text-muted-foreground mb-4">
+      <div className="w-80 bg-white shadow-xl border-r overflow-y-auto">
+        <div className="p-5">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 text-transparent bg-clip-text">
+            FRA Atlas
+          </h1>
+          <p className="text-sm text-gray-500 mb-4">
             Interactive WebGIS for Forest Rights Act
           </p>
 
-          {/* Search */}
+          {/* Search Box */}
           <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search villages, claims..." className="pl-9" />
+            <Input
+              value={query}
+              onChange={(e) => handleQueryChange(e.target.value)}
+              placeholder="Search by name, village, claim ID..."
+              className="pl-9 rounded-xl border-gray-300"
+              onFocus={() => {
+                if (searchResults.length > 0) setShowDropdown(true);
+              }}
+            />
+
+            {/* Filters */}
+            <div className="mt-2 flex gap-2">
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  doSearch(query, e.target.value, stateFilter);
+                }}
+                className="flex-1 px-2 py-1 rounded border text-sm"
+              >
+                <option value="">All Status</option>
+                <option value="verified">Verified</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+
+              <select
+                value={stateFilter}
+                onChange={(e) => {
+                  setStateFilter(e.target.value);
+                  doSearch(query, statusFilter, e.target.value);
+                }}
+                className="flex-1 px-2 py-1 rounded border text-sm"
+              >
+                <option value="">All States</option>
+                <option value="Chhattisgarh">Chhattisgarh</option>
+                <option value="Madhya Pradesh">Madhya Pradesh</option>
+                <option value="Odisha">Odisha</option>
+                <option value="Tripura">Tripura</option>
+                <option value="Jharkhand">Jharkhand</option>
+              </select>
+            </div>
+
+            {/* Search Dropdown */}
+            {showDropdown && (
+              <div className="absolute left-0 right-0 mt-2 bg-white shadow-lg border rounded-md max-h-64 overflow-y-auto z-50">
+                {loadingSearch && (
+                  <div className="p-3 text-sm text-gray-500">Searching...</div>
+                )}
+
+                {!loadingSearch && searchResults.length === 0 && (
+                  <div className="p-3 text-sm text-gray-600">
+                    No results found. Showing {claims.length} total claims.
+                  </div>
+                )}
+
+                {!loadingSearch &&
+                  searchResults.length > 0 &&
+                  searchResults.map((result) => (
+                    <div
+                      key={result.id}
+                      className="p-3 hover:bg-gray-50 border-b flex justify-between items-start"
+                    >
+                      <div className="pr-2">
+                        <h4 className="font-medium text-sm">
+                          {result.patta_holder_name}
+                        </h4>
+                        <p className="text-xs text-gray-500">
+                          {result.village_name}, {result.district}
+                        </p>
+                        <p className="text-xs font-mono text-gray-400 mt-1">
+                          {result.claim_id}
+                        </p>
+                        <div className="mt-2">{getStatusBadge(result.status)}</div>
+                      </div>
+                      <button
+                        onClick={() => handleViewOnMap(result)}
+                        className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+                      >
+                        View
+                      </button>
+                    </div>
+                  ))}
+
+                {searchResults.length > 1 && (
+                  <div className="p-2 text-right">
+                    <button
+                      onClick={handleViewAllOnMap}
+                      className="text-xs bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+                    >
+                      View all on Map
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Layers Control */}
-          <Card className="mb-4">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Layers className="h-4 w-4" /> Map Layers
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {Object.keys(layers).map((layerId) => (
-                <div
-                  key={layerId}
-                  className="flex items-center justify-between"
-                >
-                  <button
-                    onClick={() => toggleLayer(layerId)}
-                    className="flex items-center gap-2 text-left"
-                  >
-                    {layers[layerId as keyof typeof layers] ? (
-                      <Eye className="h-4 w-4" />
-                    ) : (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
-                    )}
-                    <MapPin className="h-3 w-3" />
-                    <span className="text-sm">{layerId}</span>
-                  </button>
-                  <Badge variant="secondary" className="text-xs">
-                    {
-                      claims.filter((c) =>
-                        c.status.toLowerCase().includes(layerId)
-                      ).length
-                    }
-                  </Badge>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* Feature Info in Sidebar */}
+          {/* Selected Feature */}
           {selectedFeature && (
-            <Card>
-              <CardHeader className="pb-3">
+            <Card className="shadow">
+              <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Info className="h-4 w-4" /> Feature Information
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <h4 className="font-medium text-lg">
+              <CardContent className="text-sm space-y-2">
+                <p className="font-medium text-lg">
                   {selectedFeature.patta_holder_name}
-                </h4>
-                <p className="text-sm text-muted-foreground font-mono">
+                </p>
+                <p className="font-mono text-xs text-gray-500">
                   {selectedFeature.claim_id}
                 </p>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <span className="text-muted-foreground">Village:</span>
+                <div className="grid grid-cols-2 gap-y-1">
+                  <span className="text-gray-500">Village</span>
                   <span>{selectedFeature.village_name}</span>
-                  <span className="text-muted-foreground">District:</span>
+                  <span className="text-gray-500">District</span>
                   <span>{selectedFeature.district}</span>
-                  <span className="text-muted-foreground">State:</span>
+                  <span className="text-gray-500">State</span>
                   <span>{selectedFeature.state}</span>
-                  <span className="text-muted-foreground">Area:</span>
+                  <span className="text-gray-500">Area</span>
                   <span>{selectedFeature.total_area_claimed}</span>
-                  <span className="text-muted-foreground">Land Use:</span>
-                  <span>{selectedFeature.land_use}</span>
-                  <span className="text-muted-foreground">Cultivation:</span>
-                  <span>{selectedFeature.cultivation}</span>
-                  <span className="text-muted-foreground">Phone:</span>
-                  <span>{selectedFeature.phone}</span>
                 </div>
-                <div className="pt-2 border-t">
-                  Status: {getStatusBadge(selectedFeature.status)}
+                <div className="flex justify-between pt-2 border-t">
+                  {getStatusBadge(selectedFeature.status)}
+                  <button
+                    onClick={handleResetMap}
+                    className="text-xs bg-gray-200 px-3 py-1 rounded hover:bg-gray-300"
+                  >
+                    Reset
+                  </button>
                 </div>
               </CardContent>
             </Card>
@@ -236,10 +381,10 @@ const Atlas = () => {
         </div>
       </div>
 
-      {/* Map Container */}
+      {/* Map */}
       <div className="flex-1 relative">
         <MapContainer
-          center={[22.9734, 78.6569]} // Center on Madhya Pradesh
+          center={[22.9734, 78.6569]}
           zoom={6}
           style={{ height: "100%", width: "100%" }}
         >
@@ -247,71 +392,38 @@ const Atlas = () => {
             attribution='&copy; <a href="https://osm.org/copyright">OSM</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-
-          {claims.map((claim) => {
+          {filteredClaims.map((claim) => {
             if (!claim.coordinates) return null;
             const [lat, lng] = claim.coordinates.split(",").map(Number);
             if (isNaN(lat) || isNaN(lng)) return null;
-
             const polygon = areaToSquareBounds(lat, lng, claim.total_area_claimed);
-
             return (
               <React.Fragment key={claim.id}>
-                {/* Marker */}
                 <Marker
                   position={[lat, lng]}
                   icon={createCustomIcon(claim.status)}
-                  eventHandlers={{
-                    click: () => setSelectedFeature(claim),
-                  }}
+                  eventHandlers={{ click: () => setSelectedFeature(claim) }}
                 >
                   <Popup>
-                    <div className="text-sm space-y-1">
-                      <h4 className="font-bold text-base">
-                        {claim.patta_holder_name}
-                      </h4>
-                      <p className="font-mono text-xs">{claim.claim_id}</p>
-                      <p>
-                        <strong>Village:</strong> {claim.village_name},{" "}
-                        {claim.district}
-                      </p>
-                      <p>
-                        <strong>State:</strong> {claim.state}
-                      </p>
-                      <p>
-                        <strong>Area:</strong> {claim.total_area_claimed}
-                      </p>
-                      <p>
-                        <strong>Land Use:</strong> {claim.land_use}
-                      </p>
-                      <p>
-                        <strong>Cultivation:</strong> {claim.cultivation}
-                      </p>
-                      <p>
-                        <strong>Phone:</strong> {claim.phone}
-                      </p>
-                      <p>
-                        <strong>Status:</strong> {getStatusBadge(claim.status)}
-                      </p>
+                    <div className="w-64 text-sm">
+                      <h4 className="font-semibold">{claim.patta_holder_name}</h4>
+                      <p className="text-xs text-gray-500">{claim.claim_id}</p>
+                      {getStatusBadge(claim.status)}
                     </div>
                   </Popup>
                 </Marker>
-
-                {/* Polygon */}
                 {polygon.length > 0 && (
                   <Polygon
                     positions={polygon}
                     pathOptions={{
                       color:
-                        claim.status.toLowerCase() === "verified"
+                        (claim.status || "").toLowerCase() === "verified"
                           ? "green"
                           : "blue",
                       weight: 2,
                       fillOpacity: 0.2,
                     }}
-                    eventHandlers={{
-                      click: () => setSelectedFeature(claim),
-                    }}
+                    eventHandlers={{ click: () => setSelectedFeature(claim) }}
                   />
                 )}
               </React.Fragment>

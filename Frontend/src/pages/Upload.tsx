@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +89,7 @@ const Upload = () => {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const { toast } = useToast();
+  const previewRef = useRef<HTMLDivElement>(null); // 🔹 For scroll to preview
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -303,7 +304,18 @@ const Upload = () => {
                       {getStatusBadge(file.status)}
                       
                       {file.status === 'completed' && (
-                        <Button size="sm" variant="outline">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => {
+                            toast({
+                              title: "OCR Data Ready",
+                              description: `Showing extracted details for ${file.name}`,
+                            });
+                            // 🔹 Scroll to preview section
+                            previewRef.current?.scrollIntoView({ behavior: "smooth" });
+                          }}
+                        >
                           <Eye className="h-4 w-4 mr-2" />
                           View
                         </Button>
@@ -318,7 +330,7 @@ const Upload = () => {
 
         {/* Extracted Data Preview */}
         {files.some(f => f.status === 'completed' && f.extractedData) && (
-          <Card>
+          <Card ref={previewRef}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Scan className="h-5 w-5" />
