@@ -12,7 +12,7 @@ Supports:
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/RealRakshit/sih_fra.git
+git clone https://github.com/jeetgoyal80/FRA-Portal.git
 cd sih_fra
 git checkout dev   # development branch
 ```
